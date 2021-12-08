@@ -601,7 +601,7 @@ func (s *State) Prompt(prompt string) (string, error) {
 // is negative or greater than length of text (in runes). Returns a line of user input, not
 // including a trailing newline character. An io.EOF error is returned if the user
 // signals end-of-file by pressing Ctrl-D.
-func (s *State) PromptWithSuggestion(prompt string, text string, pos int) (string, error) {
+func (s *State) PromptWithSuggestion(prompt string, text string, position int) (string, error) {
 	for _, r := range prompt {
 		if unicode.Is(unicode.C, r) {
 			return "", ErrInvalidPrompt
@@ -610,9 +610,9 @@ func (s *State) PromptWithSuggestion(prompt string, text string, pos int) (strin
 	if s.inputRedirected || !s.terminalSupported {
 		return s.promptUnsupported(prompt)
 	}
-	p := []rune(prompt)
+	s.p = []rune(prompt)
 	const minWorkingSpace = 10
-	if s.columns < countGlyphs(p)+minWorkingSpace {
+	if s.columns < countGlyphs(s.p)+minWorkingSpace {
 		return s.tooNarrow(prompt)
 	}
 	if s.outputRedirected {
@@ -623,7 +623,7 @@ func (s *State) PromptWithSuggestion(prompt string, text string, pos int) (strin
 	defer s.historyMutex.RUnlock()
 
 	fmt.Print(prompt)
-	var line = []rune(text)
+	s.line = []rune(text)
 	historyEnd := ""
 	var historyPrefix []string
 	historyPos := 0
@@ -632,12 +632,12 @@ func (s *State) PromptWithSuggestion(prompt string, text string, pos int) (strin
 	killAction := 0        // used to mark kill related actions
 
 	defer s.stopPrompt()
-
-	if pos < 0 || len(line) < pos {
-		pos = len(line)
+	s.pos = position
+	if s.pos < 0 || len(s.line) < s.pos {
+		s.pos = len(s.line)
 	}
-	if len(line) > 0 {
-		err := s.refresh(p, line, pos)
+	if len(s.line) > 0 {
+		err := s.refresh(s.p, s.line, s.pos)
 		if err != nil {
 			return "", err
 		}
@@ -650,6 +650,7 @@ restart:
 mainLoop:
 	for {
 		next, err := s.readNext()
+
 	haveNext:
 		if err != nil {
 			if s.shouldRestart != nil && s.shouldRestart(err) {
@@ -664,38 +665,38 @@ mainLoop:
 			switch v {
 			case cr, lf:
 				if s.needRefresh {
-					err := s.refresh(p, line, pos)
+					err := s.refresh(s.p, s.line, s.pos)
 					if err != nil {
 						return "", err
 					}
 				}
 				if s.multiLineMode {
-					s.resetMultiLine(p, line, pos)
+					s.resetMultiLine(s.p, s.line, s.pos)
 				}
 				fmt.Println()
 				break mainLoop
 			case ctrlA: // Start of line
-				pos = 0
+				s.pos = 0
 				s.needRefresh = true
 			case ctrlE: // End of line
-				pos = len(line)
+				s.pos = len(s.line)
 				s.needRefresh = true
 			case ctrlB: // left
-				if pos > 0 {
-					pos -= len(getSuffixGlyphs(line[:pos], 1))
+				if s.pos > 0 {
+					s.pos -= len(getSuffixGlyphs(s.line[:s.pos], 1))
 					s.needRefresh = true
 				} else {
 					s.doBeep()
 				}
 			case ctrlF: // right
-				if pos < len(line) {
-					pos += len(getPrefixGlyphs(line[pos:], 1))
+				if s.pos < len(s.line) {
+					s.pos += len(getPrefixGlyphs(s.line[s.pos:], 1))
 					s.needRefresh = true
 				} else {
 					s.doBeep()
 				}
 			case ctrlD: // del
-				if pos == 0 && len(line) == 0 {
+				if s.pos == 0 && len(s.line) == 0 {
 					// exit
 					return "", io.EOF
 				}
@@ -704,41 +705,41 @@ mainLoop:
 				// Therefore, if it isn't actually an EOF, we must re-startPrompt.
 				s.restartPrompt()
 
-				if pos >= len(line) {
+				if s.pos >= len(s.line) {
 					s.doBeep()
 				} else {
-					n := len(getPrefixGlyphs(line[pos:], 1))
-					line = append(line[:pos], line[pos+n:]...)
+					n := len(getPrefixGlyphs(s.line[s.pos:], 1))
+					s.line = append(s.line[:s.pos], s.line[s.pos+n:]...)
 					s.needRefresh = true
 				}
 			case ctrlK: // delete remainder of line
-				if pos >= len(line) {
+				if s.pos >= len(s.line) {
 					s.doBeep()
 				} else {
 					if killAction > 0 {
-						s.addToKillRing(line[pos:], 1) // Add in apend mode
+						s.addToKillRing(s.line[s.pos:], 1) // Add in apend mode
 					} else {
-						s.addToKillRing(line[pos:], 0) // Add in normal mode
+						s.addToKillRing(s.line[s.pos:], 0) // Add in normal mode
 					}
 
 					killAction = 2 // Mark that there was a kill action
-					line = line[:pos]
+					s.line = s.line[:s.pos]
 					s.needRefresh = true
 				}
 			case ctrlP: // up
 				historyAction = true
 				if historyStale {
-					historyPrefix = s.getHistoryByPrefix(string(line))
+					historyPrefix = s.getHistoryByPrefix(string(s.line))
 					historyPos = len(historyPrefix)
 					historyStale = false
 				}
 				if historyPos > 0 {
 					if historyPos == len(historyPrefix) {
-						historyEnd = string(line)
+						historyEnd = string(s.line)
 					}
 					historyPos--
-					line = []rune(historyPrefix[historyPos])
-					pos = len(line)
+					s.line = []rune(historyPrefix[historyPos])
+					s.pos = len(s.line)
 					s.needRefresh = true
 				} else {
 					s.doBeep()
@@ -746,36 +747,36 @@ mainLoop:
 			case ctrlN: // down
 				historyAction = true
 				if historyStale {
-					historyPrefix = s.getHistoryByPrefix(string(line))
+					historyPrefix = s.getHistoryByPrefix(string(s.line))
 					historyPos = len(historyPrefix)
 					historyStale = false
 				}
 				if historyPos < len(historyPrefix) {
 					historyPos++
 					if historyPos == len(historyPrefix) {
-						line = []rune(historyEnd)
+						s.line = []rune(historyEnd)
 					} else {
-						line = []rune(historyPrefix[historyPos])
+						s.line = []rune(historyPrefix[historyPos])
 					}
-					pos = len(line)
+					s.pos = len(s.line)
 					s.needRefresh = true
 				} else {
 					s.doBeep()
 				}
 			case ctrlT: // transpose prev glyph with glyph under cursor
-				if len(line) < 2 || pos < 1 {
+				if len(s.line) < 2 || s.pos < 1 {
 					s.doBeep()
 				} else {
-					if pos == len(line) {
-						pos -= len(getSuffixGlyphs(line, 1))
+					if s.pos == len(s.line) {
+						s.pos -= len(getSuffixGlyphs(s.line, 1))
 					}
-					prev := getSuffixGlyphs(line[:pos], 1)
-					next := getPrefixGlyphs(line[pos:], 1)
+					prev := getSuffixGlyphs(s.line[:s.pos], 1)
+					next := getPrefixGlyphs(s.line[s.pos:], 1)
 					scratch := make([]rune, len(prev))
 					copy(scratch, prev)
-					copy(line[pos-len(prev):], next)
-					copy(line[pos-len(prev)+len(next):], scratch)
-					pos += len(next)
+					copy(s.line[s.pos-len(prev):], next)
+					copy(s.line[s.pos-len(prev)+len(next):], scratch)
+					s.pos += len(next)
 					s.needRefresh = true
 				}
 			case ctrlL: // clear screen
@@ -784,46 +785,46 @@ mainLoop:
 			case ctrlC: // reset
 				fmt.Println("^C")
 				if s.multiLineMode {
-					s.resetMultiLine(p, line, pos)
+					s.resetMultiLine(s.p, s.line, s.pos)
 				}
 				if s.ctrlCAborts {
 					return "", ErrPromptAborted
 				}
-				line = line[:0]
-				pos = 0
+				s.line = s.line[:0]
+				s.pos = 0
 				fmt.Print(prompt)
 				s.restartPrompt()
 			case ctrlH, bs: // Backspace
-				if pos <= 0 {
+				if s.pos <= 0 {
 					s.doBeep()
 				} else {
-					n := len(getSuffixGlyphs(line[:pos], 1))
-					line = append(line[:pos-n], line[pos:]...)
-					pos -= n
+					n := len(getSuffixGlyphs(s.line[:s.pos], 1))
+					s.line = append(s.line[:s.pos-n], s.line[s.pos:]...)
+					s.pos -= n
 					s.needRefresh = true
 				}
 			case ctrlU: // Erase line before cursor
 				if killAction > 0 {
-					s.addToKillRing(line[:pos], 2) // Add in prepend mode
+					s.addToKillRing(s.line[:s.pos], 2) // Add in prepend mode
 				} else {
-					s.addToKillRing(line[:pos], 0) // Add in normal mode
+					s.addToKillRing(s.line[:s.pos], 0) // Add in normal mode
 				}
 
 				killAction = 2 // Mark that there was some killing
-				line = line[pos:]
-				pos = 0
+				s.line = s.line[s.pos:]
+				s.pos = 0
 				s.needRefresh = true
 			case ctrlW: // Erase word
-				pos, line, killAction = s.eraseWord(pos, line, killAction)
+				s.pos, s.line, killAction = s.eraseWord(s.pos, s.line, killAction)
 			case ctrlY: // Paste from Yank buffer
-				line, pos, next, err = s.yank(p, line, pos)
+				s.line, s.pos, next, err = s.yank(s.p, s.line, s.pos)
 				goto haveNext
 			case ctrlR: // Reverse Search
-				line, pos, next, err = s.reverseISearch(line, pos)
+				s.line, s.pos, next, err = s.reverseISearch(s.line, s.pos)
 				s.needRefresh = true
 				goto haveNext
 			case tab: // Tab completion
-				line, pos, next, err = s.tabComplete(p, line, pos)
+				s.line, s.pos, next, err = s.tabComplete(s.p, s.line, s.pos)
 				goto haveNext
 			// Catch keys that do nothing, but you don't want them to beep
 			case esc:
@@ -835,47 +836,47 @@ mainLoop:
 			case 0, 28, 29, 30, 31:
 				s.doBeep()
 			default:
-				if pos == len(line) && !s.multiLineMode &&
-					len(p)+len(line) < s.columns*4 && // Avoid countGlyphs on large lines
-					countGlyphs(p)+countGlyphs(line) < s.columns-1 {
-					line = append(line, v)
+				if s.pos == len(s.line) && !s.multiLineMode &&
+					len(s.p)+len(s.line) < s.columns*4 && // Avoid countGlyphs on large lines
+					countGlyphs(s.p)+countGlyphs(s.line) < s.columns-1 {
+					s.line = append(s.line, v)
 					fmt.Printf("%c", v)
-					pos++
+					s.pos++
 				} else {
-					line = append(line[:pos], append([]rune{v}, line[pos:]...)...)
-					pos++
+					s.line = append(s.line[:s.pos], append([]rune{v}, s.line[s.pos:]...)...)
+					s.pos++
 					s.needRefresh = true
 				}
 			}
 		case action:
 			switch v {
 			case del:
-				if pos >= len(line) {
+				if s.pos >= len(s.line) {
 					s.doBeep()
 				} else {
-					n := len(getPrefixGlyphs(line[pos:], 1))
-					line = append(line[:pos], line[pos+n:]...)
+					n := len(getPrefixGlyphs(s.line[s.pos:], 1))
+					s.line = append(s.line[:s.pos], s.line[s.pos+n:]...)
 				}
 			case left:
-				if pos > 0 {
-					pos -= len(getSuffixGlyphs(line[:pos], 1))
+				if s.pos > 0 {
+					s.pos -= len(getSuffixGlyphs(s.line[:s.pos], 1))
 				} else {
 					s.doBeep()
 				}
 			case wordLeft, altB:
-				if pos > 0 {
+				if s.pos > 0 {
 					var spaceHere, spaceLeft, leftKnown bool
 					for {
-						pos--
-						if pos == 0 {
+						s.pos--
+						if s.pos == 0 {
 							break
 						}
 						if leftKnown {
 							spaceHere = spaceLeft
 						} else {
-							spaceHere = unicode.IsSpace(line[pos])
+							spaceHere = unicode.IsSpace(s.line[s.pos])
 						}
-						spaceLeft, leftKnown = unicode.IsSpace(line[pos-1]), true
+						spaceLeft, leftKnown = unicode.IsSpace(s.line[s.pos-1]), true
 						if !spaceHere && spaceLeft {
 							break
 						}
@@ -884,25 +885,25 @@ mainLoop:
 					s.doBeep()
 				}
 			case right:
-				if pos < len(line) {
-					pos += len(getPrefixGlyphs(line[pos:], 1))
+				if s.pos < len(s.line) {
+					s.pos += len(getPrefixGlyphs(s.line[s.pos:], 1))
 				} else {
 					s.doBeep()
 				}
 			case wordRight, altF:
-				if pos < len(line) {
+				if s.pos < len(s.line) {
 					var spaceHere, spaceLeft, hereKnown bool
 					for {
-						pos++
-						if pos == len(line) {
+						s.pos++
+						if s.pos == len(s.line) {
 							break
 						}
 						if hereKnown {
 							spaceLeft = spaceHere
 						} else {
-							spaceLeft = unicode.IsSpace(line[pos-1])
+							spaceLeft = unicode.IsSpace(s.line[s.pos-1])
 						}
-						spaceHere, hereKnown = unicode.IsSpace(line[pos]), true
+						spaceHere, hereKnown = unicode.IsSpace(s.line[s.pos]), true
 						if spaceHere && !spaceLeft {
 							break
 						}
@@ -913,63 +914,63 @@ mainLoop:
 			case up:
 				historyAction = true
 				if historyStale {
-					historyPrefix = s.getHistoryByPrefix(string(line))
+					historyPrefix = s.getHistoryByPrefix(string(s.line))
 					historyPos = len(historyPrefix)
 					historyStale = false
 				}
 				if historyPos > 0 {
 					if historyPos == len(historyPrefix) {
-						historyEnd = string(line)
+						historyEnd = string(s.line)
 					}
 					historyPos--
-					line = []rune(historyPrefix[historyPos])
-					pos = len(line)
+					s.line = []rune(historyPrefix[historyPos])
+					s.pos = len(s.line)
 				} else {
 					s.doBeep()
 				}
 			case down:
 				historyAction = true
 				if historyStale {
-					historyPrefix = s.getHistoryByPrefix(string(line))
+					historyPrefix = s.getHistoryByPrefix(string(s.line))
 					historyPos = len(historyPrefix)
 					historyStale = false
 				}
 				if historyPos < len(historyPrefix) {
 					historyPos++
 					if historyPos == len(historyPrefix) {
-						line = []rune(historyEnd)
+						s.line = []rune(historyEnd)
 					} else {
-						line = []rune(historyPrefix[historyPos])
+						s.line = []rune(historyPrefix[historyPos])
 					}
-					pos = len(line)
+					s.pos = len(s.line)
 				} else {
 					s.doBeep()
 				}
-			case home: // Start of line
-				pos = 0
-			case end: // End of line
-				pos = len(line)
+			case home: // Start of s.line
+				s.pos = 0
+			case end: // End of s.line
+				s.pos = len(s.line)
 			case altD: // Delete next word
-				if pos == len(line) {
+				if s.pos == len(s.line) {
 					s.doBeep()
 					break
 				}
 				// Remove whitespace to the right
 				var buf []rune // Store the deleted chars in a buffer
 				for {
-					if pos == len(line) || !unicode.IsSpace(line[pos]) {
+					if s.pos == len(s.line) || !unicode.IsSpace(s.line[s.pos]) {
 						break
 					}
-					buf = append(buf, line[pos])
-					line = append(line[:pos], line[pos+1:]...)
+					buf = append(buf, s.line[s.pos])
+					s.line = append(s.line[:s.pos], s.line[s.pos+1:]...)
 				}
 				// Remove non-whitespace to the right
 				for {
-					if pos == len(line) || unicode.IsSpace(line[pos]) {
+					if s.pos == len(s.line) || unicode.IsSpace(s.line[s.pos]) {
 						break
 					}
-					buf = append(buf, line[pos])
-					line = append(line[:pos], line[pos+1:]...)
+					buf = append(buf, s.line[s.pos])
+					s.line = append(s.line[:s.pos], s.line[s.pos+1:]...)
 				}
 				// Save the result on the killRing
 				if killAction > 0 {
@@ -979,7 +980,7 @@ mainLoop:
 				}
 				killAction = 2 // Mark that there was some killing
 			case altBs: // Erase word
-				pos, line, killAction = s.eraseWord(pos, line, killAction)
+				s.pos, s.line, killAction = s.eraseWord(s.pos, s.line, killAction)
 			case winch: // Window change
 				if s.multiLineMode {
 					if s.maxRows-s.cursorRows > 0 {
@@ -997,7 +998,7 @@ mainLoop:
 			s.needRefresh = true
 		}
 		if s.needRefresh && !s.inputWaiting() {
-			err := s.refresh(p, line, pos)
+			err := s.refresh(s.p, s.line, s.pos)
 			if err != nil {
 				return "", err
 			}
@@ -1009,7 +1010,7 @@ mainLoop:
 			killAction--
 		}
 	}
-	return string(line), nil
+	return string(s.line), nil
 }
 
 // PasswordPrompt displays p, and then waits for user input. The input typed by
@@ -1104,6 +1105,16 @@ mainLoop:
 		}
 	}
 	return string(line), nil
+}
+
+func (s *State) PrintBefore(lines string) error {
+
+	s.printMut.Lock()
+	defer s.printMut.Unlock()
+	s.cursorPos(0)
+	s.eraseLine()
+	fmt.Print(lines)
+	return s.refresh(s.p, s.line, s.pos)
 }
 
 func (s *State) tooNarrow(prompt string) (string, error) {

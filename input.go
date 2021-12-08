@@ -10,6 +10,7 @@ import (
 	"os/signal"
 	"strconv"
 	"strings"
+	"sync"
 	"syscall"
 	"time"
 )
@@ -28,6 +29,10 @@ type State struct {
 	winch       chan os.Signal
 	pending     []rune
 	useCHA      bool
+	p           []rune
+	line        []rune
+	pos         int
+	printMut    sync.Mutex
 }
 
 // NewLiner initializes a new *State, and sets the terminal into raw mode. To
