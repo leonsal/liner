@@ -88,7 +88,7 @@ func (s *State) startPrompt() {
 	s.restartPrompt()
 }
 
-func (s *State) InputWaiting() bool {
+func (s *State) inputWaiting() bool {
 	return len(s.next) > 0
 }
 
@@ -115,8 +115,8 @@ func (s *State) stopPrompt() {
 	}
 }
 
-// NextPending
-func (s *State) NextPending(timeout <-chan time.Time) (rune, error) {
+// nextPending
+func (s *State) nextPending(timeout <-chan time.Time) (rune, error) {
 	select {
 	case thing, ok := <-s.next:
 		if !ok {
@@ -162,7 +162,7 @@ func (s *State) readNext() (interface{}, error) {
 	// Wait at most 50 ms for the rest of the escape sequence
 	// If nothing else arrives, it was an actual press of the esc key
 	timeout := time.After(50 * time.Millisecond)
-	flag, err := s.NextPending(timeout)
+	flag, err := s.nextPending(timeout)
 	if err != nil {
 		if err == errTimedOut {
 			return flag, nil
@@ -172,7 +172,7 @@ func (s *State) readNext() (interface{}, error) {
 
 	switch flag {
 	case '[':
-		code, err := s.NextPending(timeout)
+		code, err := s.nextPending(timeout)
 		if err != nil {
 			if err == errTimedOut {
 				return code, nil
@@ -204,7 +204,7 @@ func (s *State) readNext() (interface{}, error) {
 		case '0', '1', '2', '3', '4', '5', '6', '7', '8', '9':
 			num := []rune{code}
 			for {
-				code, err := s.NextPending(timeout)
+				code, err := s.nextPending(timeout)
 				if err != nil {
 					if err == errTimedOut {
 						return code, nil
@@ -226,7 +226,7 @@ func (s *State) readNext() (interface{}, error) {
 					}
 					num = num[:0]
 					for {
-						code, err = s.NextPending(timeout)
+						code, err = s.nextPending(timeout)
 						if err != nil {
 							if err == errTimedOut {
 								rv := s.pending[0]
@@ -304,7 +304,7 @@ func (s *State) readNext() (interface{}, error) {
 		}
 
 	case 'O':
-		code, err := s.NextPending(timeout)
+		code, err := s.nextPending(timeout)
 		if err != nil {
 			if err == errTimedOut {
 				return code, nil
