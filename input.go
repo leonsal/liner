@@ -115,6 +115,7 @@ func (s *State) stopPrompt() {
 	}
 }
 
+// NextPending
 func (s *State) NextPending(timeout <-chan time.Time) (rune, error) {
 	select {
 	case thing, ok := <-s.next:
