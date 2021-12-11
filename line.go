@@ -1107,13 +1107,16 @@ mainLoop:
 	return string(line), nil
 }
 
-func (s *State) PrintBefore(lines string) error {
+// Prints erases the current edit line and prints the specified string over it,
+// then restores the previous edit line. So normally the specified string
+// should contain a new line.
+func (s *State) Print(line string) error {
 
 	s.printMut.Lock()
 	defer s.printMut.Unlock()
 	s.cursorPos(0)
 	s.eraseLine()
-	fmt.Print(lines)
+	fmt.Print(line)
 	return s.refresh(s.p, s.line, s.pos)
 }
 
