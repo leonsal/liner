@@ -88,7 +88,7 @@ func (s *State) startPrompt() {
 	s.restartPrompt()
 }
 
-func (s *State) inputWaiting() bool {
+func (s *State) InputWaiting() bool {
 	return len(s.next) > 0
 }
 

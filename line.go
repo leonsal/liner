@@ -997,7 +997,7 @@ mainLoop:
 			}
 			s.needRefresh = true
 		}
-		if s.needRefresh && !s.inputWaiting() {
+		if s.needRefresh && !s.InputWaiting() {
 			err := s.refresh(s.p, s.line, s.pos)
 			if err != nil {
 				return "", err
